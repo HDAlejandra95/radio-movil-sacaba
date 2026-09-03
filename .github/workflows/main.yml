@@ -1,0 +1,52 @@
+name: Compilar Radio Movil Sacaba
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Descomprimir V29
+        run: |
+          unzip -q Radio_Movil_Sacaba_V29_Desde_Celular.zip -d proyecto
+          cp -a proyecto/Radio_Movil_Sacaba_V29_Desde_Celular/. .
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Preparar y compilar Pasajero
+        working-directory: pasajero
+        run: |
+          flutter create --platforms=android --org bo.radiomovilsacaba --project-name radio_movil_sacaba_pasajero .
+          flutter pub get
+          flutter build apk --release
+
+      - name: Guardar APK Pasajero
+        uses: actions/upload-artifact@v4
+        with:
+          name: Radio-Movil-Sacaba-Pasajero
+          path: pasajero/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Preparar y compilar Conductor
+        working-directory: conductor
+        run: |
+          flutter create --platforms=android --org bo.radiomovilsacaba --project-name radio_movil_sacaba_conductor .
+          flutter pub get
+          flutter build apk --release
+
+      - name: Guardar APK Conductor
+        uses: actions/upload-artifact@v4
+        with:
+          name: Radio-Movil-Sacaba-Conductor
+          path: conductor/build/app/outputs/flutter-apk/app-release.apk
