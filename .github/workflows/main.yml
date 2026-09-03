@@ -25,12 +25,37 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Preparar y compilar Pasajero
+      - name: Preparar Android moderno
+        run: |
+          rm -rf pasajero/android
+          rm -rf conductor/android
+
+      - name: Preparar Pasajero
         working-directory: pasajero
         run: |
           flutter create --platforms=android --org bo.radiomovilsacaba --project-name radio_movil_sacaba_pasajero .
           flutter pub get
-          flutter build apk --release
+
+      - name: Permisos ubicación Pasajero
+        working-directory: pasajero
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          perms = '''
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+          '''
+          if "ACCESS_FINE_LOCATION" not in s:
+              s = s.replace(marker, marker + perms)
+          p.write_text(s)
+          PY
+
+      - name: Compilar APK Pasajero
+        working-directory: pasajero
+        run: flutter build apk --release
 
       - name: Guardar APK Pasajero
         uses: actions/upload-artifact@v4
@@ -38,14 +63,35 @@ jobs:
           name: Radio-Movil-Sacaba-Pasajero
           path: pasajero/build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Preparar y compilar Conductor
+      - name: Preparar Conductor
         working-directory: conductor
         run: |
           flutter create --platforms=android --org bo.radiomovilsacaba --project-name radio_movil_sacaba_conductor .
           flutter pub get
-          flutter build apk --release
+
+      - name: Permisos ubicación Conductor
+        working-directory: conductor
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          perms = '''
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+          '''
+          if "ACCESS_FINE_LOCATION" not in s:
+              s = s.replace(marker, marker + perms)
+          p.write_text(s)
+          PY
+
+      - name: Compilar APK Conductor
+        working-directory: conductor
+        run: flutter build apk --release
 
       - name: Guardar APK Conductor
         uses: actions/upload-artifact@v4
         with:
           name: Radio-Movil-Sacaba-Conductor
+          path: conductor/build/app/outputs/flutter-apk/app-release.apk
