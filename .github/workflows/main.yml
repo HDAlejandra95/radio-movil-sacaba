@@ -1,4 +1,4 @@
-name: Compilar Radio Movil Sacaba V33
+name: Compilar Radio Movil Sacaba V34
 
 on:
   workflow_dispatch:
@@ -10,81 +10,74 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [pasajero, conductor]
+
     steps:
+
       - name: Descargar proyecto
         uses: actions/checkout@v4
 
-      - name: Buscar y descomprimir V33
-        run: |
-          set -e
-
-          ZIP=$(find . -maxdepth 1 -type f -iname '*V33*.zip' | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: No se encontró el ZIP V33"
-            exit 1
-          fi
-
-          echo "ZIP encontrado: $ZIP"
-
-          mkdir -p proyecto
-          unzip -q "$ZIP" -d proyecto
-
-          echo "Contenido:"
-          find proyecto -maxdepth 3 -type f -name pubspec.yaml -print
-
-      - name: Instalar Flutter
+      - name: Instalar Flutter estable
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Preparar Pasajero
+      - name: Preparar proyecto Android completo
+        working-directory: ${{ matrix.app }}
+        shell: bash
         run: |
-          set -e
+          flutter create \
+            --platforms=android \
+            --org bo.radiomovilsacaba \
+            --project-name radio_movil_sacaba_${{ matrix.app }} \
+            .
 
-          PASAJERO=$(find proyecto -type f -name pubspec.yaml -path '*/pasajero/pubspec.yaml' | head -n 1)
+      - name: Configurar permisos de ubicación
+        working-directory: ${{ matrix.app }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
 
-          if [ -z "$PASAJERO" ]; then
-            echo "ERROR: No se encontró el proyecto pasajero"
-            exit 1
-          fi
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
 
-          PASAJERO_DIR=$(dirname "$PASAJERO")
-          echo "Pasajero: $PASAJERO_DIR"
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
 
-          cd "$PASAJERO_DIR"
+          perms = """
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+          """
 
+          if "ACCESS_FINE_LOCATION" not in s:
+              s = s.replace(marker, marker + perms)
+
+          p.write_text(s)
+          PY
+
+      - name: Instalar dependencias
+        working-directory: ${{ matrix.app }}
+        run: |
           flutter pub get
+
+      - name: Verificar proyecto
+        working-directory: ${{ matrix.app }}
+        run: |
+          flutter analyze --no-fatal-infos
+
+      - name: Compilar APK release
+        working-directory: ${{ matrix.app }}
+        run: |
           flutter build apk --release
 
-      - name: Guardar APK Pasajero
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Radio-Movil-Sacaba-Pasajero-V33
-          path: '**/build/app/outputs/flutter-apk/app-release.apk'
-
-      - name: Preparar Conductor
-        run: |
-          set -e
-
-          CONDUCTOR=$(find proyecto -type f -name pubspec.yaml -path '*/conductor/pubspec.yaml' | head -n 1)
-
-          if [ -z "$CONDUCTOR" ]; then
-            echo "ERROR: No se encontró el proyecto conductor"
-            exit 1
-          fi
-
-          CONDUCTOR_DIR=$(dirname "$CONDUCTOR")
-          echo "Conductor: $CONDUCTOR_DIR"
-
-          cd "$CONDUCTOR_DIR"
-
-          flutter pub get
-          flutter build apk --release
-
-      - name: Guardar APK Conductor
-        uses: actions/upload-artifact@v4
-        with:
-          name: Radio-Movil-Sacaba-Conductor-V33
-          path: '**/build/app/outputs/flutter-apk/app-release.apk'
+          name: radio-movil-sacaba-${{ matrix.app }}-apk-v34
+          path: ${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
