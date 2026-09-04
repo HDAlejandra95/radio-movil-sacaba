@@ -1,4 +1,4 @@
-name: Compilar Radio Movil Sacaba V34
+name: Compilar Radio Movil Sacaba V35
 
 on:
   workflow_dispatch:
@@ -20,46 +20,64 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. DESCARGAR EL REPOSITORIO
-      # ============================================================
+      # ==========================================================
+      # 1. DESCARGAR REPOSITORIO
+      # ==========================================================
 
       - name: Descargar repositorio
         uses: actions/checkout@v5
 
 
-      # ============================================================
-      # 2. BUSCAR Y DESCOMPRIMIR V34
-      # ============================================================
+      # ==========================================================
+      # 2. BUSCAR LA VERSION MÁS NUEVA
+      # ==========================================================
 
-      - name: Localizar y descomprimir V34
+      - name: Buscar ZIP V35
         shell: bash
         run: |
           set -e
 
-          echo "========================================"
-          echo "BUSCANDO ARCHIVO V34"
-          echo "========================================"
+          echo "=========================================="
+          echo "BUSCANDO VERSION V35"
+          echo "=========================================="
 
           ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
             -maxdepth 3 \
             -type f \
-            \( -iname '*V34*.zip' -o -iname '*v34*.zip' \) \
-            | head -n 1)
+            -iname '*V35*.zip' \
+            | sort -V \
+            | tail -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
             echo ""
-            echo "ERROR: No se encontró el ZIP V34."
+            echo "ERROR: No se encontró el ZIP V35."
             echo ""
-            echo "Archivos encontrados:"
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f
+            echo "ZIP disponibles:"
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 3 \
+              -type f \
+              -iname '*.zip'
+
             exit 1
           fi
 
           echo ""
-          echo "ZIP encontrado:"
+          echo "=========================================="
+          echo "ZIP SELECCIONADO:"
           echo "$ZIP_FILE"
-          echo ""
+          echo "=========================================="
+
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+
+      # ==========================================================
+      # 3. DESCOMPRIMIR V35
+      # ==========================================================
+
+      - name: Descomprimir V35
+        shell: bash
+        run: |
+          set -e
 
           rm -rf "$GITHUB_WORKSPACE/proyecto"
 
@@ -69,29 +87,26 @@ jobs:
             -d "$GITHUB_WORKSPACE/proyecto"
 
           echo ""
-          echo "========================================"
-          echo "V34 DESCOMPRIMIDO"
-          echo "========================================"
+          echo "=========================================="
+          echo "CONTENIDO V35"
+          echo "=========================================="
 
           find "$GITHUB_WORKSPACE/proyecto" \
-            -maxdepth 4 \
+            -maxdepth 5 \
             -type f \
+            | sort \
             | head -150
 
 
-      # ============================================================
-      # 3. DETECTAR LA RAÍZ DEL PROYECTO
-      # ============================================================
+      # ==========================================================
+      # 4. DETECTAR RAIZ
+      # ==========================================================
 
-      - name: Detectar carpeta del proyecto
+      - name: Detectar proyecto
         id: detectar
         shell: bash
         run: |
           set -e
-
-          echo "========================================"
-          echo "BUSCANDO pasajero/pubspec.yaml"
-          echo "========================================"
 
           ROOT=$(find "$GITHUB_WORKSPACE/proyecto" \
             -type f \
@@ -101,13 +116,8 @@ jobs:
             | sed 's#/pasajero/pubspec.yaml##')
 
           if [ -z "$ROOT" ]; then
+            echo "ERROR: No se encontró pasajero/pubspec.yaml"
 
-            echo ""
-            echo "ERROR:"
-            echo "No se encontró pasajero/pubspec.yaml"
-            echo ""
-
-            echo "Contenido disponible:"
             find "$GITHUB_WORKSPACE/proyecto" \
               -maxdepth 6 \
               -type f
@@ -116,32 +126,20 @@ jobs:
           fi
 
           echo ""
-          echo "RAÍZ DEL PROYECTO:"
+          echo "=========================================="
+          echo "RAIZ DETECTADA"
           echo "$ROOT"
-          echo ""
+          echo "=========================================="
 
-          echo "Verificando aplicaciones..."
-
-          if [ ! -f "$ROOT/pasajero/pubspec.yaml" ]; then
-            echo "ERROR: No existe pasajero/pubspec.yaml"
-            exit 1
-          fi
-
-          if [ ! -f "$ROOT/conductor/pubspec.yaml" ]; then
-            echo "ERROR: No existe conductor/pubspec.yaml"
-            exit 1
-          fi
-
-          echo ""
-          echo "PASAJERO: OK"
-          echo "CONDUCTOR: OK"
+          test -f "$ROOT/pasajero/pubspec.yaml"
+          test -f "$ROOT/conductor/pubspec.yaml"
 
           echo "root=$ROOT" >> "$GITHUB_OUTPUT"
 
 
-      # ============================================================
-      # 4. INSTALAR FLUTTER
-      # ============================================================
+      # ==========================================================
+      # 5. INSTALAR FLUTTER
+      # ==========================================================
 
       - name: Instalar Flutter estable
         uses: subosito/flutter-action@v2
@@ -150,9 +148,9 @@ jobs:
           cache: true
 
 
-      # ============================================================
-      # 5. MOSTRAR VERSIONES
-      # ============================================================
+      # ==========================================================
+      # 6. VERIFICAR FLUTTER
+      # ==========================================================
 
       - name: Verificar Flutter
         run: |
@@ -160,9 +158,9 @@ jobs:
           dart --version
 
 
-      # ============================================================
-      # 6. PREPARAR APLICACIÓN
-      # ============================================================
+      # ==========================================================
+      # 7. PREPARAR APLICACION
+      # ==========================================================
 
       - name: Preparar aplicación
         shell: bash
@@ -174,34 +172,17 @@ jobs:
 
           APP_DIR="$ROOT/$APP"
 
-          echo "========================================"
-          echo "PREPARANDO: $APP"
-          echo "========================================"
-
-          echo ""
-          echo "Directorio:"
-          echo "$APP_DIR"
-
-          if [ ! -d "$APP_DIR" ]; then
-            echo "ERROR: No existe el directorio $APP_DIR"
-            exit 1
-          fi
-
-          if [ ! -f "$APP_DIR/pubspec.yaml" ]; then
-            echo "ERROR: No existe pubspec.yaml"
-            exit 1
-          fi
+          echo "=========================================="
+          echo "PREPARANDO $APP"
+          echo "=========================================="
 
           cd "$APP_DIR"
 
-          echo ""
-          echo "Contenido inicial:"
-          ls -la
+          test -f pubspec.yaml
+          test -f lib/main.dart
 
           echo ""
-          echo "========================================"
-          echo "GENERANDO ESTRUCTURA ANDROID"
-          echo "========================================"
+          echo "Generando proyecto Android..."
 
           flutter create \
             --platforms=android \
@@ -210,24 +191,21 @@ jobs:
             .
 
           echo ""
-          echo "Estructura Android generada."
+          echo "Android generado."
 
-          echo ""
-          echo "Verificando Gradle..."
-
-          if [ -f "android/app/build.gradle" ]; then
-            echo "android/app/build.gradle: OK"
-          elif [ -f "android/app/build.gradle.kts" ]; then
-            echo "android/app/build.gradle.kts: OK"
+          if [ -f android/app/build.gradle ]; then
+            echo "build.gradle: OK"
+          elif [ -f android/app/build.gradle.kts ]; then
+            echo "build.gradle.kts: OK"
           else
-            echo "ERROR: No se encontró build.gradle ni build.gradle.kts"
+            echo "ERROR: No se encontró configuración Gradle."
             exit 1
           fi
 
 
-      # ============================================================
-      # 7. ELIMINAR TEST DE FLUTTER
-      # ============================================================
+      # ==========================================================
+      # 8. ELIMINAR TEST DE EJEMPLO
+      # ==========================================================
 
       - name: Eliminar tests de ejemplo
         shell: bash
@@ -237,30 +215,16 @@ jobs:
         run: |
           set -e
 
-          APP_DIR="$ROOT/$APP"
-
-          cd "$APP_DIR"
-
-          echo "Eliminando tests de ejemplo..."
+          cd "$ROOT/$APP"
 
           rm -rf test
 
-          echo "Tests eliminados."
-
-          echo ""
-          echo "Verificando que no exista test/widget_test.dart..."
-
-          if [ -f "test/widget_test.dart" ]; then
-            echo "ERROR: widget_test.dart todavía existe."
-            exit 1
-          fi
-
-          echo "OK."
+          echo "Tests de ejemplo eliminados."
 
 
-      # ============================================================
-      # 8. CONFIGURAR PERMISOS DE UBICACIÓN
-      # ============================================================
+      # ==========================================================
+      # 9. PERMISOS DE UBICACION
+      # ==========================================================
 
       - name: Configurar permisos Android
         shell: bash
@@ -270,30 +234,18 @@ jobs:
         run: |
           set -e
 
-          APP_DIR="$ROOT/$APP"
-
-          cd "$APP_DIR"
+          cd "$ROOT/$APP"
 
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-
-          if [ ! -f "$MANIFEST" ]; then
-            echo "ERROR: No existe AndroidManifest.xml"
-            exit 1
-          fi
 
           python3 - "$MANIFEST" <<'PY'
           from pathlib import Path
           import sys
 
-          manifest = Path(sys.argv[1])
-
-          text = manifest.read_text()
+          path = Path(sys.argv[1])
+          text = path.read_text()
 
           marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
-
-          if marker not in text:
-              print("ERROR: No se encontró el elemento manifest.")
-              sys.exit(1)
 
           permissions = [
               '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
@@ -301,38 +253,32 @@ jobs:
               '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
           ]
 
+          if marker not in text:
+              raise SystemExit("No se encontró el elemento manifest.")
+
           additions = []
 
           for permission in permissions:
-
               name = permission.split('"')[1]
 
               if name not in text:
                   additions.append(permission)
 
           if additions:
-
               text = text.replace(
                   marker,
                   marker + "\n" + "\n".join(additions)
               )
 
-              manifest.write_text(text)
+              path.write_text(text)
 
-              print("Permisos agregados correctamente.")
-
-          else:
-
-              print("Los permisos ya estaban configurados.")
+          print("Permisos Android configurados.")
           PY
 
-          echo ""
-          echo "Permisos configurados."
 
-
-      # ============================================================
-      # 9. INSTALAR DEPENDENCIAS
-      # ============================================================
+      # ==========================================================
+      # 10. DEPENDENCIAS
+      # ==========================================================
 
       - name: Instalar dependencias
         shell: bash
@@ -344,16 +290,12 @@ jobs:
 
           cd "$ROOT/$APP"
 
-          echo "========================================"
-          echo "FLUTTER PUB GET"
-          echo "========================================"
-
           flutter pub get
 
 
-      # ============================================================
-      # 10. ANALIZAR SOLAMENTE LIB/
-      # ============================================================
+      # ==========================================================
+      # 11. ANALIZAR APLICACION
+      # ==========================================================
 
       - name: Analizar aplicación
         shell: bash
@@ -365,19 +307,48 @@ jobs:
 
           cd "$ROOT/$APP"
 
-          echo "========================================"
-          echo "ANALIZANDO LIB/"
-          echo "========================================"
+          echo "=========================================="
+          echo "ANALIZANDO $APP"
+          echo "=========================================="
 
           flutter analyze lib --no-fatal-infos
 
+
+      # ==========================================================
+      # 12. COMPILAR APK
+      # ==========================================================
+
+      - name: Compilar APK
+        shell: bash
+        env:
+          ROOT: ${{ steps.detectar.outputs.root }}
+          APP: ${{ matrix.app }}
+        run: |
+          set -e
+
+          cd "$ROOT/$APP"
+
+          echo "=========================================="
+          echo "COMPILANDO $APP"
+          echo "=========================================="
+
+          flutter build apk --release
+
           echo ""
-          echo "ANÁLISIS COMPLETADO."
+          echo "APK GENERADO:"
+          ls -lh build/app/outputs/flutter-apk/
 
 
-      # ============================================================
-      # 11. COMPILAR APK
-      # ============================================================
+      # ==========================================================
+      # 13. GUARDAR APK
+      # ==========================================================
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Radio-Movil-Sacaba-V35-${{ matrix.app }}
+          path: ${{ steps.detectar.outputs.root }}/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error=====================
 
       - name: Compilar APK
         shell: bash
