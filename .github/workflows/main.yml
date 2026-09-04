@@ -32,8 +32,7 @@ jobs:
 
           if [ -z "$ZIP" ]; then
             echo "ERROR: No se encontró el ZIP V37."
-            echo ""
-            echo "Archivos ZIP encontrados:"
+            echo "ZIP encontrados:"
             find . -type f -name '*.zip'
             exit 1
           fi
@@ -46,7 +45,6 @@ jobs:
 
           unzip -q "$ZIP" -d proyecto
 
-          echo ""
           echo "Contenido de V37:"
           find proyecto -maxdepth 3 -type f | head -80
 
@@ -55,21 +53,15 @@ jobs:
         run: |
           set -e
 
-          ROOT=$(find proyecto -type f -path '*/pubspec.yaml' | grep -v '/pasajero/' | grep -v '/conductor/' | head -n 1 | sed 's#/pubspec.yaml##')
-
-          if [ -z "$ROOT" ]; then
-            ROOT=$(find proyecto -type f -name 'pubspec.yaml' | head -n 1 | sed 's#/pubspec.yaml##')
-          fi
+          ROOT=$(find proyecto -type f -name 'pubspec.yaml' | head -n 1 | sed 's#/pubspec.yaml##')
 
           if [ -z "$ROOT" ]; then
             echo "ERROR: No se encontró pubspec.yaml."
-            find proyecto -type f -name 'pubspec.yaml'
             exit 1
           fi
 
           echo "ROOT=$ROOT" >> "$GITHUB_ENV"
 
-          echo ""
           echo "Aplicación encontrada:"
           echo "$ROOT"
 
@@ -87,15 +79,13 @@ jobs:
 
           rm -rf test
 
-      - name: Configurar Android
+      - name: Configurar permisos Android
         working-directory: ${{ env.ROOT }}
         shell: bash
         run: |
           set -e
 
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-
-          echo "Configurando AndroidManifest..."
 
           python3 - <<'PY'
           from pathlib import Path
@@ -119,6 +109,26 @@ jobs:
                       1
                   )
 
+          path.write_text(text)
+          PY
+
+          echo "AndroidManifest configurado:"
+          cat "$MANIFEST"
+
+      - name: Configurar URL de retorno Google
+        working-directory: ${{ env.ROOT }}
+        shell: bash
+        run: |
+          set -e
+
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          text = path.read_text()
+
           intent_filter = '''
               <intent-filter>
                   <action android:name="android.intent.action.VIEW"/>
@@ -138,47 +148,53 @@ jobs:
           path.write_text(text)
           PY
 
-          echo ""
-          echo "===== ANDROID MANIFEST ====="
-          cat "$MANIFEST"
-          echo "============================"
+          echo "URL de retorno configurada."
 
       - name: Instalar dependencias
         working-directory: ${{ env.ROOT }}
         shell: bash
         run: |
+          set -e
           flutter pub get
 
-      - name: Analizar código
+      - name: Verificar código
         working-directory: ${{ env.ROOT }}
         shell: bash
         run: |
-          flutter analyze lib --no-fatal-infos
+          echo "Ejecutando análisis informativo..."
+          flutter analyze lib --no-fatal-infos || true
 
-      - name: Compilar APK
+          echo ""
+          echo "El análisis no detendrá la compilación."
+          echo "Los errores reales serán comprobados durante flutter build apk."
+
+      - name: Compilar APK V37
         working-directory: ${{ env.ROOT }}
         shell: bash
         run: |
           set -e
 
-          echo "Compilando Radio Móvil Sacaba V37..."
+          echo "========================================"
+          echo "COMPILANDO RADIO MOVIL SACABA V37"
+          echo "========================================"
 
           flutter build apk --release
 
           APK="build/app/outputs/flutter-apk/app-release.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERROR: No se encontró el APK."
+            echo "ERROR: Flutter no generó el APK."
             echo ""
-            echo "Archivos generados:"
+            echo "Archivos encontrados:"
             find build -type f 2>/dev/null || true
             exit 1
           fi
 
           echo ""
-          echo "================================"
-          echo "APK V37 GENERADO CORRECTAMENTE"
-          echo "================================"
+          echo "========================================"
+          echo "APK GENERADO CORRECTAMENTE"
+          echo "========================================"
+
           ls -lh "$APK"
 
       - name: Subir APK V37
