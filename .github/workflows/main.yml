@@ -1,4 +1,4 @@
-name: Radio Movil Sacaba V36
+name: Radio Movil Sacaba V37
 
 on:
   workflow_dispatch:
@@ -8,14 +8,8 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.app }}
+    name: Build App V37
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        app:
-          - pasajero
-          - conductor
 
     steps:
 
@@ -27,16 +21,19 @@ jobs:
         with:
           channel: stable
 
-      - name: Buscar y extraer V35
+      - name: Buscar ZIP V37
+        shell: bash
         run: |
           set -e
 
-          echo "Buscando ZIP V35..."
+          echo "Buscando aplicación V37..."
 
-          ZIP=$(find . -type f -name '*V35*.zip' | head -n 1)
+          ZIP=$(find . -type f -name 'Radio_Movil_Sacaba_V37_Aplicacion_Unica.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: No se encontró ningún ZIP V35."
+            echo "ERROR: No se encontró el ZIP V37."
+            echo ""
+            echo "Archivos ZIP encontrados:"
             find . -type f -name '*.zip'
             exit 1
           fi
@@ -49,48 +46,56 @@ jobs:
 
           unzip -q "$ZIP" -d proyecto
 
-          echo "Contenido:"
-          find proyecto -maxdepth 3 -type f | head -50
+          echo ""
+          echo "Contenido de V37:"
+          find proyecto -maxdepth 3 -type f | head -80
 
-      - name: Detectar proyecto
+      - name: Detectar aplicación Flutter
+        shell: bash
         run: |
           set -e
 
-          ROOT=$(find proyecto -type f -path '*/pasajero/pubspec.yaml' | head -n 1 | sed 's#/pasajero/pubspec.yaml##')
+          ROOT=$(find proyecto -type f -path '*/pubspec.yaml' | grep -v '/pasajero/' | grep -v '/conductor/' | head -n 1 | sed 's#/pubspec.yaml##')
 
           if [ -z "$ROOT" ]; then
-            echo "ERROR: No se encontró el proyecto Flutter."
-            find proyecto -type f -name pubspec.yaml
+            ROOT=$(find proyecto -type f -name 'pubspec.yaml' | head -n 1 | sed 's#/pubspec.yaml##')
+          fi
+
+          if [ -z "$ROOT" ]; then
+            echo "ERROR: No se encontró pubspec.yaml."
+            find proyecto -type f -name 'pubspec.yaml'
             exit 1
           fi
 
           echo "ROOT=$ROOT" >> "$GITHUB_ENV"
 
-          echo "Proyecto:"
+          echo ""
+          echo "Aplicación encontrada:"
           echo "$ROOT"
 
       - name: Crear estructura Android
-        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+        working-directory: ${{ env.ROOT }}
+        shell: bash
         run: |
           set -e
 
           flutter create \
             --platforms=android \
             --org bo.radiomovilsacaba \
-            --project-name "radio_movil_sacaba_${{ matrix.app }}" \
+            --project-name radio_movil_sacaba \
             .
 
           rm -rf test
 
-      - name: Agregar permisos Android
-        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+      - name: Configurar Android
+        working-directory: ${{ env.ROOT }}
+        shell: bash
         run: |
           set -e
 
           MANIFEST="android/app/src/main/AndroidManifest.xml"
 
-          echo "Archivo:"
-          echo "$MANIFEST"
+          echo "Configurando AndroidManifest..."
 
           python3 - <<'PY'
           from pathlib import Path
@@ -114,28 +119,49 @@ jobs:
                       1
                   )
 
+          intent_filter = '''
+              <intent-filter>
+                  <action android:name="android.intent.action.VIEW"/>
+                  <category android:name="android.intent.category.DEFAULT"/>
+                  <category android:name="android.intent.category.BROWSABLE"/>
+                  <data android:scheme="bo.radiomovilsacaba"/>
+              </intent-filter>
+          '''
+
+          if 'android:scheme="bo.radiomovilsacaba"' not in text:
+              text = text.replace(
+                  '</activity>',
+                  intent_filter + '\n        </activity>',
+                  1
+              )
+
           path.write_text(text)
           PY
 
           echo ""
-          echo "===== MANIFEST ====="
+          echo "===== ANDROID MANIFEST ====="
           cat "$MANIFEST"
-          echo "===================="
+          echo "============================"
 
       - name: Instalar dependencias
-        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+        working-directory: ${{ env.ROOT }}
+        shell: bash
         run: |
           flutter pub get
 
-      - name: Analizar aplicación
-        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+      - name: Analizar código
+        working-directory: ${{ env.ROOT }}
+        shell: bash
         run: |
           flutter analyze lib --no-fatal-infos
 
       - name: Compilar APK
-        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+        working-directory: ${{ env.ROOT }}
+        shell: bash
         run: |
           set -e
+
+          echo "Compilando Radio Móvil Sacaba V37..."
 
           flutter build apk --release
 
@@ -143,16 +169,21 @@ jobs:
 
           if [ ! -f "$APK" ]; then
             echo "ERROR: No se encontró el APK."
+            echo ""
+            echo "Archivos generados:"
             find build -type f 2>/dev/null || true
             exit 1
           fi
 
-          echo "APK generado correctamente:"
+          echo ""
+          echo "================================"
+          echo "APK V37 GENERADO CORRECTAMENTE"
+          echo "================================"
           ls -lh "$APK"
 
-      - name: Subir APK
+      - name: Subir APK V37
         uses: actions/upload-artifact@v4
         with:
-          name: Radio-Movil-Sacaba-V36-${{ matrix.app }}
-          path: ${{ env.ROOT }}/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          name: Radio-Movil-Sacaba-V37
+          path: ${{ env.ROOT }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
