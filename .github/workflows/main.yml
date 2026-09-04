@@ -43,7 +43,7 @@ jobs:
           mkdir -p proyecto
           unzip -q "$ZIP" -d proyecto
 
-          echo "Contenido:"
+          echo "Contenido del ZIP:"
           find proyecto -maxdepth 3 -type f | head -50
 
       - name: Detectar carpeta del proyecto
@@ -59,7 +59,9 @@ jobs:
           fi
 
           echo "ROOT=$ROOT" >> "$GITHUB_ENV"
-          echo "Proyecto encontrado en: $ROOT"
+
+          echo "Proyecto encontrado en:"
+          echo "$ROOT"
 
       - name: Preparar aplicación
         working-directory: ${{ env.ROOT }}/${{ matrix.app }}
@@ -67,7 +69,8 @@ jobs:
         run: |
           set -e
 
-          echo "Preparando aplicación: ${{ matrix.app }}"
+          echo "Preparando aplicación:"
+          echo "${{ matrix.app }}"
 
           flutter create \
             --platforms=android \
@@ -85,7 +88,8 @@ jobs:
 
           MANIFEST="android/app/src/main/AndroidManifest.xml"
 
-          echo "Configurando: $MANIFEST"
+          echo "Configurando:"
+          echo "$MANIFEST"
 
           python3 - <<'PY'
           from pathlib import Path
@@ -93,62 +97,70 @@ jobs:
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           text = manifest.read_text()
 
-          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
-
-          if "android.permission.INTERNET" not in text:
-              text = text.replace(
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission
-              )
+          manifest_tag = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
 
           permissions = [
+              '<uses-permission android:name="android.permission.INTERNET"/>',
               '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
               '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>',
           ]
 
-          for p in permissions:
-              if p not in text:
+          for permission in permissions:
+              if permission not in text:
                   text = text.replace(
-                      '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
-                      '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + p
+                      manifest_tag,
+                      manifest_tag + "\n    " + permission,
+                      1
                   )
 
           manifest.write_text(text)
           PY
 
-          echo "Manifest final:"
+          echo ""
+          echo "===== ANDROID MANIFEST ====="
           cat "$MANIFEST"
+          echo "============================"
 
       - name: Obtener dependencias
         working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+        shell: bash
         run: |
           flutter pub get
 
       - name: Analizar código
         working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+        shell: bash
         run: |
           flutter analyze lib --no-fatal-infos
 
       - name: Compilar APK
         working-directory: ${{ env.ROOT }}/${{ matrix.app }}
-        run: |
-          flutter build apk --release
-
-      - name: Preparar APK
-        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
         shell: bash
         run: |
           set -e
 
-          mkdir -p ../../../salida
+          echo "Compilando APK release..."
 
-          cp build/app/outputs/flutter-apk/app-release.apk \
-            "../../../salida/Radio_Movil_Sacaba_V36_${{ matrix.app }}.apk"
+          flutter build apk --release
 
-          ls -lh ../../../salida/
+          echo ""
+          echo "===== APK GENERADO ====="
 
-      - name: Subir APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Radio-Movil-Sacaba-V36-${{ matrix.app }}
-          path: salida/Radio_Movil_Sacaba_V36_${{ matrix.app }}.apk
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: Flutter terminó pero no existe:"
+            echo "$APK"
+            echo ""
+            echo "Archivos encontrados:"
+            find build -type f 2>/dev/null || true
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
+          echo "========================"
+
+      - name: Verificar APK generado
+        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+       
