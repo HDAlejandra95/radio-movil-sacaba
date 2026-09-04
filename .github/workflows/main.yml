@@ -1,4 +1,4 @@
-name: Radio Movil Sacaba V35
+name: Radio Movil Sacaba V36
 
 on:
   workflow_dispatch:
@@ -8,10 +8,10 @@ permissions:
 
 jobs:
   build:
+    name: Build ${{ matrix.app }}
     runs-on: ubuntu-latest
 
     strategy:
-      fail-fast: false
       matrix:
         app:
           - pasajero
@@ -25,155 +25,130 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          cache: true
 
-      - name: Buscar V35
+      - name: Buscar ZIP V35
         shell: bash
         run: |
           set -e
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 3 -type f -iname '*V35*.zip' | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then
+
+          ZIP=$(find . -maxdepth 3 -type f -name "*V35*.zip" | head -n 1)
+
+          if [ -z "$ZIP" ]; then
             echo "ERROR: No se encontró el ZIP V35."
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f -iname '*.zip'
             exit 1
           fi
-          echo "ZIP V35 encontrado:"
-          echo "$ZIP_FILE"
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Descomprimir V35
+          echo "ZIP encontrado: $ZIP"
+
+          mkdir -p proyecto
+          unzip -q "$ZIP" -d proyecto
+
+          echo "Contenido:"
+          find proyecto -maxdepth 3 -type f | head -50
+
+      - name: Detectar carpeta del proyecto
         shell: bash
         run: |
           set -e
-          rm -rf "$GITHUB_WORKSPACE/proyecto"
-          mkdir -p "$GITHUB_WORKSPACE/proyecto"
-          unzip -o "$ZIP_FILE" -d "$GITHUB_WORKSPACE/proyecto"
 
-      - name: Detectar proyecto
-        id: detectar
-        shell: bash
-        run: |
-          set -e
-          ROOT=$(find "$GITHUB_WORKSPACE/proyecto" -type f -path '*/pasajero/pubspec.yaml' -print -quit | sed 's#/pasajero/pubspec.yaml##')
+          ROOT=$(find proyecto -type f -path "*/pasajero/pubspec.yaml" | head -n 1 | sed 's#/pasajero/pubspec.yaml##')
 
           if [ -z "$ROOT" ]; then
-            echo "ERROR: No se encontró pasajero/pubspec.yaml"
-            find "$GITHUB_WORKSPACE/proyecto" -maxdepth 6 -type f
+            echo "ERROR: No se encontró la carpeta pasajero."
             exit 1
           fi
 
-          if [ ! -f "$ROOT/conductor/pubspec.yaml" ]; then
-            echo "ERROR: No se encontró conductor/pubspec.yaml"
-            exit 1
-          fi
-
-          echo "Proyecto:"
-          echo "$ROOT"
-          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Proyecto encontrado en: $ROOT"
 
       - name: Preparar aplicación
+        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
         shell: bash
-        env:
-          ROOT: ${{ steps.detectar.outputs.root }}
-          APP: ${{ matrix.app }}
         run: |
           set -e
-          cd "$ROOT/$APP"
 
-          test -f pubspec.yaml
-          test -f lib/main.dart
-
-          rm -rf android
+          echo "Preparando aplicación: ${{ matrix.app }}"
 
           flutter create \
             --platforms=android \
             --org bo.radiomovilsacaba \
-            --project-name "radio_movil_sacaba_${APP}" \
+            --project-name "radio_movil_sacaba_${{ matrix.app }}" \
             .
 
-      - name: Eliminar tests de ejemplo
-        shell: bash
-        env:
-          ROOT: ${{ steps.detectar.outputs.root }}
-          APP: ${{ matrix.app }}
-        run: |
-          set -e
-          cd "$ROOT/$APP"
           rm -rf test
 
-      - name: Configurar permisos
+      - name: Configurar permisos Android
+        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
         shell: bash
-        env:
-          ROOT: ${{ steps.detectar.outputs.root }}
-          APP: ${{ matrix.app }}
         run: |
           set -e
-          cd "$ROOT/$APP"
 
           MANIFEST="android/app/src/main/AndroidManifest.xml"
 
-          python3 - "$MANIFEST" <<'PY'
+          echo "Configurando: $MANIFEST"
+
+          python3 - <<'PY'
           from pathlib import Path
-          import sys
 
-          path = Path(sys.argv[1])
-          text = path.read_text()
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
 
-          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+
+          if "android.permission.INTERNET" not in text:
+              text = text.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission
+              )
 
           permissions = [
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
-              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />'
+              '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
+              '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>',
           ]
 
-          if marker not in text:
-              raise SystemExit("No se encontró AndroidManifest.xml correctamente.")
+          for p in permissions:
+              if p not in text:
+                  text = text.replace(
+                      '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                      '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + p
+                  )
 
-          for permission in permissions:
-              name = permission.split('"')[1]
-              if name not in text:
-                  text = text.replace(marker, marker + "\n" + permission)
-
-          path.write_text(text)
-          print("Permisos configurados correctamente.")
+          manifest.write_text(text)
           PY
 
-      - name: Instalar dependencias
-        shell: bash
-        env:
-          ROOT: ${{ steps.detectar.outputs.root }}
-          APP: ${{ matrix.app }}
+          echo "Manifest final:"
+          cat "$MANIFEST"
+
+      - name: Obtener dependencias
+        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
         run: |
-          set -e
-          cd "$ROOT/$APP"
           flutter pub get
 
-      - name: Analizar aplicación
-        shell: bash
-        env:
-          ROOT: ${{ steps.detectar.outputs.root }}
-          APP: ${{ matrix.app }}
+      - name: Analizar código
+        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
         run: |
-          set -e
-          cd "$ROOT/$APP"
           flutter analyze lib --no-fatal-infos
 
       - name: Compilar APK
-        shell: bash
-        env:
-          ROOT: ${{ steps.detectar.outputs.root }}
-          APP: ${{ matrix.app }}
+        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
         run: |
-          set -e
-          cd "$ROOT/$APP"
           flutter build apk --release
 
-          echo "APK generado:"
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
+      - name: Preparar APK
+        working-directory: ${{ env.ROOT }}/${{ matrix.app }}
+        shell: bash
+        run: |
+          set -e
 
-      - name: Guardar APK
+          mkdir -p ../../../salida
+
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "../../../salida/Radio_Movil_Sacaba_V36_${{ matrix.app }}.apk"
+
+          ls -lh ../../../salida/
+
+      - name: Subir APK
         uses: actions/upload-artifact@v4
         with:
-          name: Radio-Movil-Sacaba-V35-${{ matrix.app }}
-          path: ${{ steps.detectar.outputs.root }}/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          name: Radio-Movil-Sacaba-V36-${{ matrix.app }}
+          path: salida/Radio_Movil_Sacaba_V36_${{ matrix.app }}.apk
