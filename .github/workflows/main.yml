@@ -17,8 +17,61 @@ jobs:
 
     steps:
 
-      - name: Descargar proyecto
+      - name: Descargar repositorio
         uses: actions/checkout@v4
+
+      - name: Localizar y descomprimir V34
+        shell: bash
+        run: |
+          set -e
+
+          echo "Buscando ZIP V34..."
+
+          ZIP_FILE=$(find . -maxdepth 2 -type f \
+            \( -iname '*V34*.zip' -o -iname '*v34*.zip' \) \
+            | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No se encontró el ZIP V34."
+            echo "Archivos disponibles:"
+            find . -maxdepth 3 -type f | head -100
+            exit 1
+          fi
+
+          echo "ZIP encontrado:"
+          echo "$ZIP_FILE"
+
+          rm -rf proyecto
+          mkdir -p proyecto
+
+          unzip -o "$ZIP_FILE" -d proyecto
+
+          echo ""
+          echo "Contenido descomprimido:"
+          find proyecto -maxdepth 3 -type f | head -100
+
+      - name: Detectar carpeta del proyecto
+        id: detectar
+        shell: bash
+        run: |
+          set -e
+
+          ROOT=$(find "$GITHUB_WORKSPACE/proyecto" \
+            -type f \
+            -path '*/pasajero/pubspec.yaml' \
+            -print -quit \
+            | sed 's#/pasajero/pubspec.yaml##')
+
+          if [ -z "$ROOT" ]; then
+            echo "ERROR: No se encontró pasajero/pubspec.yaml"
+            find "$GITHUB_WORKSPACE/proyecto" -maxdepth 5 -type f
+            exit 1
+          fi
+
+          echo "Proyecto encontrado en:"
+          echo "$ROOT"
+
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
 
       - name: Instalar Flutter estable
         uses: subosito/flutter-action@v2
@@ -26,58 +79,128 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Preparar proyecto Android completo
-        working-directory: ${{ matrix.app }}
+      - name: Preparar proyecto Flutter
         shell: bash
+        env:
+          ROOT: ${{ steps.detectar.outputs.root }}
+          APP: ${{ matrix.app }}
         run: |
+          set -e
+
+          APP_DIR="$ROOT/$APP"
+
+          echo "Preparando:"
+          echo "$APP_DIR"
+
+          if [ ! -f "$APP_DIR/pubspec.yaml" ]; then
+            echo "ERROR: No existe pubspec.yaml en $APP_DIR"
+            exit 1
+          fi
+
+          cd "$APP_DIR"
+
+          echo "Generando estructura Android completa..."
+
           flutter create \
             --platforms=android \
             --org bo.radiomovilsacaba \
-            --project-name radio_movil_sacaba_${{ matrix.app }} \
+            --project-name "radio_movil_sacaba_${APP}" \
             .
 
-      - name: Configurar permisos de ubicación
-        working-directory: ${{ matrix.app }}
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          echo "Android generado correctamente."
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
+          test -f android/app/build.gradle || \
+          test -f android/app/build.gradle.kts
+
+      - name: Configurar permisos Android
+        shell: bash
+        env:
+          ROOT: ${{ steps.detectar.outputs.root }}
+          APP: ${{ matrix.app }}
+        run: |
+          set -e
+
+          APP_DIR="$ROOT/$APP"
+          cd "$APP_DIR"
+
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+
+          python3 - "$MANIFEST" <<'PY'
+          from pathlib import Path
+          import sys
+
+          manifest = Path(sys.argv[1])
+          text = manifest.read_text()
+
+          permissions = [
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+          ]
 
           marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
 
-          perms = """
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-          """
+          additions = []
 
-          if "ACCESS_FINE_LOCATION" not in s:
-              s = s.replace(marker, marker + perms)
+          for permission in permissions:
+              name = permission.split('"')[1]
 
-          p.write_text(s)
+              if name not in text:
+                  additions.append(permission)
+
+          if additions:
+              text = text.replace(
+                  marker,
+                  marker + "\n" + "\n".join(additions)
+              )
+
+          manifest.write_text(text)
+
+          print("Permisos Android configurados.")
           PY
 
       - name: Instalar dependencias
-        working-directory: ${{ matrix.app }}
+        shell: bash
+        env:
+          ROOT: ${{ steps.detectar.outputs.root }}
+          APP: ${{ matrix.app }}
         run: |
+          set -e
+
+          cd "$ROOT/$APP"
+
           flutter pub get
 
-      - name: Verificar proyecto
-        working-directory: ${{ matrix.app }}
+      - name: Analizar aplicación
+        shell: bash
+        env:
+          ROOT: ${{ steps.detectar.outputs.root }}
+          APP: ${{ matrix.app }}
         run: |
+          set -e
+
+          cd "$ROOT/$APP"
+
           flutter analyze --no-fatal-infos
 
-      - name: Compilar APK release
-        working-directory: ${{ matrix.app }}
+      - name: Compilar APK
+        shell: bash
+        env:
+          ROOT: ${{ steps.detectar.outputs.root }}
+          APP: ${{ matrix.app }}
         run: |
+          set -e
+
+          cd "$ROOT/$APP"
+
           flutter build apk --release
+
+          echo "APK generado:"
+          ls -lh build/app/outputs/flutter-apk/
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: radio-movil-sacaba-${{ matrix.app }}-apk-v34
-          path: ${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          name: Radio-Movil-Sacaba-V34-${{ matrix.app }}
+          path: ${{ steps.detectar.outputs.root }}/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
