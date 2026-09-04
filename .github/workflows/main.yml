@@ -1,4 +1,4 @@
-name: Compilar Radio Movil Sacaba
+name: Compilar Radio Movil Sacaba V33
 
 on:
   workflow_dispatch:
@@ -14,10 +14,24 @@ jobs:
       - name: Descargar proyecto
         uses: actions/checkout@v4
 
-      - name: Descomprimir V29
+      - name: Buscar y descomprimir V33
         run: |
-          unzip -q Radio_Movil_Sacaba_V29_Desde_Celular.zip -d proyecto
-          cp -a proyecto/Radio_Movil_Sacaba_V29_Desde_Celular/. .
+          set -e
+
+          ZIP=$(find . -maxdepth 1 -type f -iname '*V33*.zip' | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No se encontró el ZIP V33"
+            exit 1
+          fi
+
+          echo "ZIP encontrado: $ZIP"
+
+          mkdir -p proyecto
+          unzip -q "$ZIP" -d proyecto
+
+          echo "Contenido:"
+          find proyecto -maxdepth 3 -type f -name pubspec.yaml -print
 
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
@@ -25,73 +39,52 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Preparar Android moderno
-        run: |
-          rm -rf pasajero/android
-          rm -rf conductor/android
-
       - name: Preparar Pasajero
-        working-directory: pasajero
         run: |
-          flutter create --platforms=android --org bo.radiomovilsacaba --project-name radio_movil_sacaba_pasajero .
+          set -e
+
+          PASAJERO=$(find proyecto -type f -name pubspec.yaml -path '*/pasajero/pubspec.yaml' | head -n 1)
+
+          if [ -z "$PASAJERO" ]; then
+            echo "ERROR: No se encontró el proyecto pasajero"
+            exit 1
+          fi
+
+          PASAJERO_DIR=$(dirname "$PASAJERO")
+          echo "Pasajero: $PASAJERO_DIR"
+
+          cd "$PASAJERO_DIR"
+
           flutter pub get
-
-      - name: Permisos ubicación Pasajero
-        working-directory: pasajero
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
-          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
-          perms = '''
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-          '''
-          if "ACCESS_FINE_LOCATION" not in s:
-              s = s.replace(marker, marker + perms)
-          p.write_text(s)
-          PY
-
-      - name: Compilar APK Pasajero
-        working-directory: pasajero
-        run: flutter build apk --release
+          flutter build apk --release
 
       - name: Guardar APK Pasajero
         uses: actions/upload-artifact@v4
         with:
-          name: Radio-Movil-Sacaba-Pasajero
-          path: pasajero/build/app/outputs/flutter-apk/app-release.apk
+          name: Radio-Movil-Sacaba-Pasajero-V33
+          path: '**/build/app/outputs/flutter-apk/app-release.apk'
 
       - name: Preparar Conductor
-        working-directory: conductor
         run: |
-          flutter create --platforms=android --org bo.radiomovilsacaba --project-name radio_movil_sacaba_conductor .
+          set -e
+
+          CONDUCTOR=$(find proyecto -type f -name pubspec.yaml -path '*/conductor/pubspec.yaml' | head -n 1)
+
+          if [ -z "$CONDUCTOR" ]; then
+            echo "ERROR: No se encontró el proyecto conductor"
+            exit 1
+          fi
+
+          CONDUCTOR_DIR=$(dirname "$CONDUCTOR")
+          echo "Conductor: $CONDUCTOR_DIR"
+
+          cd "$CONDUCTOR_DIR"
+
           flutter pub get
-
-      - name: Permisos ubicación Conductor
-        working-directory: conductor
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
-          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
-          perms = '''
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-          '''
-          if "ACCESS_FINE_LOCATION" not in s:
-              s = s.replace(marker, marker + perms)
-          p.write_text(s)
-          PY
-
-      - name: Compilar APK Conductor
-        working-directory: conductor
-        run: flutter build apk --release
+          flutter build apk --release
 
       - name: Guardar APK Conductor
         uses: actions/upload-artifact@v4
         with:
-          name: Radio-Movil-Sacaba-Conductor
-          path: conductor/build/app/outputs/flutter-apk/app-release.apk
+          name: Radio-Movil-Sacaba-Conductor-V33
+          path: '**/build/app/outputs/flutter-apk/app-release.apk'
